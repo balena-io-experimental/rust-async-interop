@@ -1,0 +1,10 @@
+[package]
+name = "rust-async-interop"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+axum = "*"
+tokio = { version = "*", features = ["full"] }
+nm = { git = "https://github.com/balena-io-modules/libnm-rs.git" }
+glib = { git = "https://github.com/gtk-rs/gtk-rs-core" }
