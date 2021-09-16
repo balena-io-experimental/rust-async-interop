@@ -1,7 +1,11 @@
 use std::sync::Arc;
+use std::thread;
+
 use tokio::sync::oneshot;
 
 use axum::{extract, handler::get, AddExtensionLayer, Router};
+
+use glib::{MainContext, MainLoop};
 
 type Responder<T> = oneshot::Sender<T>;
 
@@ -16,8 +20,8 @@ enum Command {
 }
 
 fn run_network_manager_loop(glib_rx: glib::Receiver<CommandRequest>) {
-    let context = glib::MainContext::new();
-    let loop_ = glib::MainLoop::new(Some(&context), false);
+    let context = MainContext::new();
+    let loop_ = MainLoop::new(Some(&context), false);
 
     context.push_thread_default();
 
@@ -62,13 +66,13 @@ async fn hello(state: extract::Extension<Arc<State>>) -> String {
 
 #[tokio::main]
 async fn main() {
-    let (sender, receiver) = glib::MainContext::channel(glib::PRIORITY_DEFAULT);
+    let (sender, receiver) = MainContext::channel(glib::PRIORITY_DEFAULT);
 
-    std::thread::spawn(move || {
+    thread::spawn(move || {
         run_network_manager_loop(receiver);
     });
 
-    let shared_state = std::sync::Arc::new(State { sender });
+    let shared_state = Arc::new(State { sender });
 
     let app = Router::new()
         .route("/", get(hello))
