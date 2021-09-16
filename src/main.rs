@@ -1,25 +1,34 @@
 use std::sync::Arc;
+use tokio::sync::oneshot;
 
-use axum::{
-    extract,
-    AddExtensionLayer,
-    handler::get,
-    Router,
-};
+use axum::{extract, handler::get, AddExtensionLayer, Router};
+
+type Responder<T> = oneshot::Sender<T>;
+
+struct CommandRequest {
+    responder: Responder<String>,
+    command: Command,
+}
 
 #[derive(Debug)]
 enum Command {
     Hello,
 }
 
-fn run_network_manager_loop(glib_rx: glib::Receiver<Command>) {
+fn run_network_manager_loop(glib_rx: glib::Receiver<CommandRequest>) {
     let context = glib::MainContext::new();
     let loop_ = glib::MainLoop::new(Some(&context), false);
 
     context.push_thread_default();
 
-    glib_rx.attach(None, |command| {
-        println!("RX {:?}", command);
+    glib_rx.attach(None, |command_req| {
+        println!("RX Hello");
+        let CommandRequest { responder, command } = command_req;
+        match command {
+            Command::Hello => {
+                responder.send("Hi".into()).unwrap();
+            }
+        }
         glib::Continue(true)
     });
 
@@ -29,18 +38,31 @@ fn run_network_manager_loop(glib_rx: glib::Receiver<Command>) {
 }
 
 struct State {
-    sender: glib::Sender<Command>,
+    sender: glib::Sender<CommandRequest>,
+}
+
+async fn send_command(state: &Arc<State>, command: Command) -> String {
+    let (resp_tx, resp_rx) = oneshot::channel();
+
+    state
+        .sender
+        .send(CommandRequest {
+            responder: resp_tx,
+            command,
+        })
+        .unwrap();
+
+    resp_rx.await.unwrap()
 }
 
 async fn hello(state: extract::Extension<Arc<State>>) -> String {
-    let state: Arc<State> = state.0;
-    state.sender.send(Command::Hello).unwrap();
-    format!("TX {:?}\n", Command::Hello).into()
+    let response = send_command(&state.0, Command::Hello).await;
+    format!("{}\n", response)
 }
 
 #[tokio::main]
 async fn main() {
-    let (sender, receiver) = glib::MainContext::channel::<Command>(glib::PRIORITY_DEFAULT);
+    let (sender, receiver) = glib::MainContext::channel(glib::PRIORITY_DEFAULT);
 
     std::thread::spawn(move || {
         run_network_manager_loop(receiver);
