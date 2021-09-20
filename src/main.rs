@@ -1,6 +1,8 @@
 use std::sync::Arc;
 use std::thread;
 
+use nm::*;
+
 use tokio::sync::oneshot;
 
 use axum::{extract, handler::get, AddExtensionLayer, Router};
@@ -17,8 +19,21 @@ enum Command {
     CheckConnectivity,
 }
 
+struct State {
+    glib_sender: glib::Sender<CommandRequest>,
+}
+
 async fn check_connectivity_nm(responder: oneshot::Sender<String>) {
-    responder.send("Connectivity checking TODO".into()).unwrap();
+    let client = Client::new_async_future()
+        .await
+        .unwrap();
+
+    let connectivity = client
+        .check_connectivity_async_future()
+        .await
+        .unwrap();
+
+    responder.send(format!("Connectivity: {:?}", connectivity)).unwrap();
 }
 
 fn dispatch_command_requests(command_request: CommandRequest) -> glib::Continue {
@@ -42,10 +57,6 @@ fn run_network_manager_loop(glib_receiver: glib::Receiver<CommandRequest>) {
     loop_.run();
 
     context.pop_thread_default();
-}
-
-struct State {
-    glib_sender: glib::Sender<CommandRequest>,
 }
 
 async fn send_command(state: &Arc<State>, command: Command) -> String {
