@@ -7,34 +7,37 @@ use axum::{extract, handler::get, AddExtensionLayer, Router};
 
 use glib::{MainContext, MainLoop};
 
-type Responder<T> = oneshot::Sender<T>;
-
 struct CommandRequest {
-    responder: Responder<String>,
+    responder: oneshot::Sender<String>,
     command: Command,
 }
 
 #[derive(Debug)]
 enum Command {
-    Hello,
+    CheckConnectivity,
 }
 
-fn run_network_manager_loop(glib_rx: glib::Receiver<CommandRequest>) {
+async fn check_connectivity_nm(responder: oneshot::Sender<String>) {
+    responder.send("Connectivity checking TODO".into()).unwrap();
+}
+
+fn dispatch_command_requests(command_request: CommandRequest) -> glib::Continue {
+    let CommandRequest { responder, command } = command_request;
+    let context = MainContext::ref_thread_default();
+    let handler = match command {
+        Command::CheckConnectivity => check_connectivity_nm,
+    };
+    context.spawn_local(handler(responder));
+    glib::Continue(true)
+}
+
+fn run_network_manager_loop(glib_receiver: glib::Receiver<CommandRequest>) {
     let context = MainContext::new();
     let loop_ = MainLoop::new(Some(&context), false);
 
     context.push_thread_default();
 
-    glib_rx.attach(None, |command_req| {
-        println!("RX Hello");
-        let CommandRequest { responder, command } = command_req;
-        match command {
-            Command::Hello => {
-                responder.send("Hi".into()).unwrap();
-            }
-        }
-        glib::Continue(true)
-    });
+    glib_receiver.attach(None, dispatch_command_requests);
 
     loop_.run();
 
@@ -42,40 +45,37 @@ fn run_network_manager_loop(glib_rx: glib::Receiver<CommandRequest>) {
 }
 
 struct State {
-    sender: glib::Sender<CommandRequest>,
+    glib_sender: glib::Sender<CommandRequest>,
 }
 
 async fn send_command(state: &Arc<State>, command: Command) -> String {
-    let (resp_tx, resp_rx) = oneshot::channel();
+    let (responder, receiver) = oneshot::channel();
 
     state
-        .sender
-        .send(CommandRequest {
-            responder: resp_tx,
-            command,
-        })
+        .glib_sender
+        .send(CommandRequest { responder, command })
         .unwrap();
 
-    resp_rx.await.unwrap()
+    receiver.await.unwrap()
 }
 
-async fn hello(state: extract::Extension<Arc<State>>) -> String {
-    let response = send_command(&state.0, Command::Hello).await;
+async fn check_connectivity(state: extract::Extension<Arc<State>>) -> String {
+    let response = send_command(&state.0, Command::CheckConnectivity).await;
     format!("{}\n", response)
 }
 
 #[tokio::main]
 async fn main() {
-    let (sender, receiver) = MainContext::channel(glib::PRIORITY_DEFAULT);
+    let (glib_sender, glib_receiver) = MainContext::channel(glib::PRIORITY_DEFAULT);
 
     thread::spawn(move || {
-        run_network_manager_loop(receiver);
+        run_network_manager_loop(glib_receiver);
     });
 
-    let shared_state = Arc::new(State { sender });
+    let shared_state = Arc::new(State { glib_sender });
 
     let app = Router::new()
-        .route("/", get(hello))
+        .route("/", get(check_connectivity))
         .layer(AddExtensionLayer::new(shared_state));
 
     axum::Server::bind(&"0.0.0.0:3000".parse().unwrap())
