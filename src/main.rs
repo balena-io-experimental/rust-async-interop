@@ -1,83 +1,21 @@
+mod network;
+
 use std::sync::Arc;
 use std::thread;
-
-use nm::*;
 
 use tokio::sync::oneshot;
 
 use axum::{extract, handler::get, AddExtensionLayer, Router};
 
-use glib::{MainContext, MainLoop};
-
-struct CommandRequest {
-    responder: oneshot::Sender<String>,
-    command: Command,
-}
-
-#[derive(Debug)]
-enum Command {
-    CheckConnectivity,
-}
+use network::{create_channel, run_network_manager_loop, NetworkCommand, NetworkRequest};
 
 struct State {
-    glib_sender: glib::Sender<CommandRequest>,
-}
-
-async fn check_connectivity_nm(responder: oneshot::Sender<String>) {
-    let client = Client::new_async_future()
-        .await
-        .unwrap();
-
-    let connectivity = client
-        .check_connectivity_async_future()
-        .await
-        .unwrap();
-
-    responder.send(format!("Connectivity: {:?}", connectivity)).unwrap();
-}
-
-fn dispatch_command_requests(command_request: CommandRequest) -> glib::Continue {
-    let CommandRequest { responder, command } = command_request;
-    let context = MainContext::ref_thread_default();
-    let handler = match command {
-        Command::CheckConnectivity => check_connectivity_nm,
-    };
-    context.spawn_local(handler(responder));
-    glib::Continue(true)
-}
-
-fn run_network_manager_loop(glib_receiver: glib::Receiver<CommandRequest>) {
-    let context = MainContext::new();
-    let loop_ = MainLoop::new(Some(&context), false);
-
-    context.push_thread_default();
-
-    glib_receiver.attach(None, dispatch_command_requests);
-
-    loop_.run();
-
-    context.pop_thread_default();
-}
-
-async fn send_command(state: &Arc<State>, command: Command) -> String {
-    let (responder, receiver) = oneshot::channel();
-
-    state
-        .glib_sender
-        .send(CommandRequest { responder, command })
-        .unwrap();
-
-    receiver.await.unwrap()
-}
-
-async fn check_connectivity(state: extract::Extension<Arc<State>>) -> String {
-    let response = send_command(&state.0, Command::CheckConnectivity).await;
-    format!("{}\n", response)
+    glib_sender: glib::Sender<NetworkRequest>,
 }
 
 #[tokio::main]
 async fn main() {
-    let (glib_sender, glib_receiver) = MainContext::channel(glib::PRIORITY_DEFAULT);
+    let (glib_sender, glib_receiver) = create_channel();
 
     thread::spawn(move || {
         run_network_manager_loop(glib_receiver);
@@ -93,4 +31,20 @@ async fn main() {
         .serve(app.into_make_service())
         .await
         .unwrap();
+}
+
+async fn check_connectivity(state: extract::Extension<Arc<State>>) -> String {
+    let response = send_command(&state.0, NetworkCommand::CheckConnectivity).await;
+    format!("{}\n", response)
+}
+
+async fn send_command(state: &Arc<State>, command: NetworkCommand) -> String {
+    let (responder, receiver) = oneshot::channel();
+
+    state
+        .glib_sender
+        .send(NetworkRequest::new(responder, command))
+        .unwrap();
+
+    receiver.await.unwrap()
 }
