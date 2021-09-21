@@ -41,13 +41,13 @@ fn dispatch_command_requests(command_request: NetworkRequest) -> glib::Continue 
     let NetworkRequest { responder, command } = command_request;
     let context = MainContext::ref_thread_default();
     let handler = match command {
-        NetworkCommand::CheckConnectivity => check_connectivity_nm,
+        NetworkCommand::CheckConnectivity => check_connectivity,
     };
     context.spawn_local(handler(responder));
     glib::Continue(true)
 }
 
-async fn check_connectivity_nm(responder: oneshot::Sender<String>) {
+async fn check_connectivity(responder: oneshot::Sender<String>) {
     let client = Client::new_async_future().await.unwrap();
 
     let connectivity = client.check_connectivity_async_future().await.unwrap();
