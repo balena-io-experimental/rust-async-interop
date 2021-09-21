@@ -20,7 +20,7 @@ impl NetworkRequest {
     }
 }
 
-pub fn create_channel<T>() -> (glib::Sender<T>, glib::Receiver<T>) {
+pub fn create_channel() -> (glib::Sender<NetworkRequest>, glib::Receiver<NetworkRequest>) {
     MainContext::channel(glib::PRIORITY_DEFAULT)
 }
 
