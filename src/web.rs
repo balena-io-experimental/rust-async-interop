@@ -14,7 +14,9 @@ pub async fn run_web_loop(glib_sender: glib::Sender<NetworkRequest>) {
     let shared_state = Arc::new(State { glib_sender });
 
     let app = Router::new()
-        .route("/", get(check_connectivity))
+        .route("/", get(usage))
+        .route("/check-connectivity", get(check_connectivity))
+        .route("/list-connections", get(list_connections))
         .layer(AddExtensionLayer::new(shared_state));
 
     axum::Server::bind(&"0.0.0.0:3000".parse().unwrap())
@@ -23,9 +25,16 @@ pub async fn run_web_loop(glib_sender: glib::Sender<NetworkRequest>) {
         .unwrap();
 }
 
+async fn usage() -> &'static str {
+    "Use /check-connectivity or /list-connections\n"
+}
+
 async fn check_connectivity(state: extract::Extension<Arc<State>>) -> String {
-    let response = send_command(&state.0, NetworkCommand::CheckConnectivity).await;
-    format!("{}\n", response)
+    send_command(&state.0, NetworkCommand::CheckConnectivity).await
+}
+
+async fn list_connections(state: extract::Extension<Arc<State>>) -> String {
+    send_command(&state.0, NetworkCommand::ListConnections).await
 }
 
 async fn send_command(state: &Arc<State>, command: NetworkCommand) -> String {
