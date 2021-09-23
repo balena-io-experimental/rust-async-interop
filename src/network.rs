@@ -1,3 +1,5 @@
+use anyhow::{Context, Result};
+
 use tokio::sync::oneshot;
 
 use glib::{MainContext, MainLoop};
@@ -6,6 +8,8 @@ use std::future::Future;
 
 use nm::*;
 
+type TokioResponder = oneshot::Sender<Result<String>>;
+
 #[derive(Debug)]
 pub enum NetworkCommand {
     CheckConnectivity,
@@ -13,12 +17,12 @@ pub enum NetworkCommand {
 }
 
 pub struct NetworkRequest {
-    responder: oneshot::Sender<String>,
+    responder: TokioResponder,
     command: NetworkCommand,
 }
 
 impl NetworkRequest {
-    pub fn new(responder: oneshot::Sender<String>, command: NetworkCommand) -> Self {
+    pub fn new(responder: TokioResponder, command: NetworkCommand) -> Self {
         NetworkRequest { responder, command }
     }
 }
@@ -50,32 +54,35 @@ fn dispatch_command_requests(command_request: NetworkRequest) -> glib::Continue 
 }
 
 fn spawn(
-    command_future: impl Future<Output = String> + 'static,
-    responder: oneshot::Sender<String>,
+    command_future: impl Future<Output = Result<String>> + 'static,
+    responder: TokioResponder,
 ) {
     let context = MainContext::ref_thread_default();
     context.spawn_local(execute_and_respond(command_future, responder));
 }
 
 async fn execute_and_respond(
-    command_future: impl Future<Output = String> + 'static,
-    responder: oneshot::Sender<String>,
+    command_future: impl Future<Output = Result<String>> + 'static,
+    responder: TokioResponder,
 ) {
     let result = command_future.await;
 
-    responder.send(result).unwrap();
+    let _ = responder.send(result);
 }
 
-async fn check_connectivity() -> String {
-    let client = Client::new_async_future().await.unwrap();
+async fn check_connectivity() -> Result<String> {
+    let client = create_client().await?;
 
-    let connectivity = client.check_connectivity_async_future().await.unwrap();
+    let connectivity = client
+        .check_connectivity_async_future()
+        .await
+        .context("Failed to execute check connectivity")?;
 
-    format!("Connectivity: {:?}\n", connectivity)
+    Ok(format!("Connectivity: {:?}\n", connectivity))
 }
 
-async fn list_connections() -> String {
-    let client = Client::new_async_future().await.unwrap();
+async fn list_connections() -> Result<String> {
+    let client = create_client().await?;
 
     let all_connections: Vec<_> = client
         .connections()
@@ -95,5 +102,11 @@ async fn list_connections() -> String {
         }
     }
 
-    result
+    Ok(result)
+}
+
+async fn create_client() -> Result<Client> {
+    Client::new_async_future()
+        .await
+        .context("Failed to create NetworkManager client")
 }

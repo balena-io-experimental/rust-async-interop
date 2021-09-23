@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2018"
 
 [dependencies]
+anyhow = "1.0"
 axum = "*"
 tokio = { version = "*", features = ["full"] }
 nm = { git = "https://github.com/balena-io-modules/libnm-rs.git" }
