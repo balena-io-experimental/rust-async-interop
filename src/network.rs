@@ -2,6 +2,8 @@ use tokio::sync::oneshot;
 
 use glib::{MainContext, MainLoop};
 
+use std::future::Future;
+
 use nm::*;
 
 #[derive(Debug)]
@@ -40,25 +42,39 @@ pub fn run_network_manager_loop(glib_receiver: glib::Receiver<NetworkRequest>) {
 
 fn dispatch_command_requests(command_request: NetworkRequest) -> glib::Continue {
     let NetworkRequest { responder, command } = command_request;
-    let context = MainContext::ref_thread_default();
     match command {
-        NetworkCommand::CheckConnectivity => context.spawn_local(check_connectivity(responder)),
-        NetworkCommand::ListConnections => context.spawn_local(list_connections(responder)),
+        NetworkCommand::CheckConnectivity => spawn(check_connectivity(), responder),
+        NetworkCommand::ListConnections => spawn(list_connections(), responder),
     };
     glib::Continue(true)
 }
 
-async fn check_connectivity(responder: oneshot::Sender<String>) {
+fn spawn(
+    command_future: impl Future<Output = String> + 'static,
+    responder: oneshot::Sender<String>,
+) {
+    let context = MainContext::ref_thread_default();
+    context.spawn_local(execute_and_respond(command_future, responder));
+}
+
+async fn execute_and_respond(
+    command_future: impl Future<Output = String> + 'static,
+    responder: oneshot::Sender<String>,
+) {
+    let result = command_future.await;
+
+    responder.send(result).unwrap();
+}
+
+async fn check_connectivity() -> String {
     let client = Client::new_async_future().await.unwrap();
 
     let connectivity = client.check_connectivity_async_future().await.unwrap();
 
-    responder
-        .send(format!("Connectivity: {:?}\n", connectivity))
-        .unwrap();
+    format!("Connectivity: {:?}\n", connectivity)
 }
 
-async fn list_connections(responder: oneshot::Sender<String>) {
+async fn list_connections() -> String {
     let client = Client::new_async_future().await.unwrap();
 
     let all_connections: Vec<_> = client
@@ -79,5 +95,5 @@ async fn list_connections(responder: oneshot::Sender<String>) {
         }
     }
 
-    responder.send(result).unwrap();
+    result
 }
