@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 
 use tokio::sync::oneshot;
 
@@ -106,7 +106,13 @@ async fn list_connections() -> Result<String> {
 }
 
 async fn create_client() -> Result<Client> {
-    Client::new_async_future()
+    let client = Client::new_async_future()
         .await
-        .context("Failed to create NetworkManager client")
+        .context("Failed to create NetworkManager client")?;
+
+    if !client.is_nm_running() {
+        return Err(anyhow!("NetworkManager daemon is not running"));
+    }
+
+    Ok(client)
 }
