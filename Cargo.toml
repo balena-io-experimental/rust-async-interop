@@ -6,6 +6,6 @@ edition = "2018"
 [dependencies]
 anyhow = "1.0"
 axum = "0.2"
-tokio = { version = "*", features = ["full"] }
+tokio = { version = "1", features = ["full"] }
 nm = { git = "https://github.com/balena-io-modules/libnm-rs.git" }
 glib = { git = "https://github.com/gtk-rs/gtk-rs-core" }
