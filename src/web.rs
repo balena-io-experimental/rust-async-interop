@@ -82,13 +82,9 @@ async fn receive_network_response(
     if let Ok(received) = receiver.await {
         match received {
             Ok(response) => Ok(response),
-            Err(error) => {
-                let mut errors = Vec::new();
-                for e in error.chain() {
-                    errors.push(format!("{}", e))
-                }
-                Err(ResponseError { errors })
-            }
+            Err(error) => Err(ResponseError {
+                errors: error.chain().map(|e| format!("{}", e)).collect(),
+            }),
         }
     } else {
         Err(ResponseError {
