@@ -22,7 +22,7 @@ struct State {
 
 #[derive(Serialize)]
 struct ResponseError {
-    error: String,
+    errors: Vec<String>,
 }
 
 impl IntoResponse for ResponseError {
@@ -76,13 +76,17 @@ async fn send_command(state: &Arc<State>, command: NetworkCommand) -> ResponseRe
     if let Ok(received) = receiver.await {
         match received {
             Ok(response) => Ok(response),
-            Err(error) => Err(ResponseError {
-                error: format!("{}", error),
-            }),
+            Err(error) => {
+                let mut errors = Vec::new();
+                for e in error.chain() {
+                    errors.push(format!("{}", e))
+                }
+                Err(ResponseError { errors })
+            }
         }
     } else {
         Err(ResponseError {
-            error: "Failed to receive response from network thread".into(),
+            errors: vec!["Failed to receive response from network thread".into()],
         })
     }
 }
