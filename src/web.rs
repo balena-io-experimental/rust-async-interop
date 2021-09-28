@@ -73,6 +73,12 @@ async fn send_command(state: &Arc<State>, command: NetworkCommand) -> ResponseRe
         .send(NetworkRequest::new(responder, command))
         .unwrap();
 
+    receive_network_response(receiver).await
+}
+
+async fn receive_network_response(
+    receiver: oneshot::Receiver<anyhow::Result<String>>,
+) -> ResponseResult {
     if let Ok(received) = receiver.await {
         match received {
             Ok(response) => Ok(response),
