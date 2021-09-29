@@ -62,13 +62,13 @@ async fn usage() -> &'static str {
 async fn check_connectivity(state: extract::Extension<Arc<State>>) -> ResponseResult {
     send_command(&state.0, NetworkCommand::CheckConnectivity)
         .await
-        .convert()
+        .into_response_result()
 }
 
 async fn list_connections(state: extract::Extension<Arc<State>>) -> ResponseResult {
     send_command(&state.0, NetworkCommand::ListConnections)
         .await
-        .convert()
+        .into_response_result()
 }
 
 async fn send_command(state: &Arc<State>, command: NetworkCommand) -> Result<String> {
@@ -88,12 +88,12 @@ async fn receive_network_response(receiver: oneshot::Receiver<Result<String>>) -
         .context("Failed to receive response from network thread")?
 }
 
-trait Converter {
-    fn convert(self) -> ResponseResult;
+trait IntoResposeResult {
+    fn into_response_result(self) -> ResponseResult;
 }
 
-impl Converter for Result<String> {
-    fn convert(self) -> ResponseResult {
+impl IntoResposeResult for Result<String> {
+    fn into_response_result(self) -> ResponseResult {
         match self {
             Ok(data) => Ok(data),
             Err(err) => Err(ResponseError {
