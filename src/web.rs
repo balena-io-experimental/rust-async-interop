@@ -62,12 +62,14 @@ async fn usage() -> &'static str {
 async fn check_connectivity(state: extract::Extension<Arc<State>>) -> ResponseResult {
     send_command(&state.0, NetworkCommand::CheckConnectivity)
         .await
+        .context("Failed to check connectivity")
         .into_response_result()
 }
 
 async fn list_connections(state: extract::Extension<Arc<State>>) -> ResponseResult {
     send_command(&state.0, NetworkCommand::ListConnections)
         .await
+        .context("Failed to list connections")
         .into_response_result()
 }
 
