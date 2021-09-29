@@ -1,6 +1,8 @@
 use std::convert::Infallible;
 use std::sync::Arc;
 
+use anyhow::{Context, Result};
+
 use axum::{
     body::{Bytes, Full},
     extract,
@@ -36,7 +38,7 @@ impl IntoResponse for ResponseError {
     }
 }
 
-type ResponseResult = Result<String, ResponseError>;
+type ResponseResult = std::result::Result<String, ResponseError>;
 
 pub async fn run_web_loop(glib_sender: glib::Sender<NetworkRequest>) {
     let shared_state = Arc::new(State { glib_sender });
@@ -58,14 +60,18 @@ async fn usage() -> &'static str {
 }
 
 async fn check_connectivity(state: extract::Extension<Arc<State>>) -> ResponseResult {
-    send_command(&state.0, NetworkCommand::CheckConnectivity).await
+    send_command(&state.0, NetworkCommand::CheckConnectivity)
+        .await
+        .convert()
 }
 
 async fn list_connections(state: extract::Extension<Arc<State>>) -> ResponseResult {
-    send_command(&state.0, NetworkCommand::ListConnections).await
+    send_command(&state.0, NetworkCommand::ListConnections)
+        .await
+        .convert()
 }
 
-async fn send_command(state: &Arc<State>, command: NetworkCommand) -> ResponseResult {
+async fn send_command(state: &Arc<State>, command: NetworkCommand) -> Result<String> {
     let (responder, receiver) = oneshot::channel();
 
     state
@@ -76,19 +82,23 @@ async fn send_command(state: &Arc<State>, command: NetworkCommand) -> ResponseRe
     receive_network_response(receiver).await
 }
 
-async fn receive_network_response(
-    receiver: oneshot::Receiver<anyhow::Result<String>>,
-) -> ResponseResult {
-    if let Ok(received) = receiver.await {
-        match received {
-            Ok(response) => Ok(response),
-            Err(error) => Err(ResponseError {
-                errors: error.chain().map(|e| format!("{}", e)).collect(),
+async fn receive_network_response(receiver: oneshot::Receiver<Result<String>>) -> Result<String> {
+    receiver
+        .await
+        .context("Failed to receive response from network thread")?
+}
+
+trait Converter {
+    fn convert(self) -> ResponseResult;
+}
+
+impl Converter for Result<String> {
+    fn convert(self) -> ResponseResult {
+        match self {
+            Ok(data) => Ok(data),
+            Err(err) => Err(ResponseError {
+                errors: err.chain().map(|e| format!("{}", e)).collect(),
             }),
         }
-    } else {
-        Err(ResponseError {
-            errors: vec!["Failed to receive response from network thread".into()],
-        })
     }
 }
