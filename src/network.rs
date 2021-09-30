@@ -6,9 +6,11 @@ use glib::{MainContext, MainLoop};
 
 use std::future::Future;
 
+use serde::Serialize;
+
 use nm::*;
 
-type TokioResponder = oneshot::Sender<Result<String>>;
+type TokioResponder = oneshot::Sender<Result<NetworkResponse>>;
 
 #[derive(Debug)]
 pub enum NetworkCommand {
@@ -24,6 +26,45 @@ pub struct NetworkRequest {
 impl NetworkRequest {
     pub fn new(responder: TokioResponder, command: NetworkCommand) -> Self {
         NetworkRequest { responder, command }
+    }
+}
+
+pub enum NetworkResponse {
+    CheckConnectivity(Connectivity),
+    ListConnections(ConnectionList),
+}
+
+#[derive(Serialize)]
+pub struct Connectivity {
+    pub connectivity: String,
+}
+
+impl Connectivity {
+    fn new(connectivity: String) -> Self {
+        Connectivity { connectivity }
+    }
+}
+
+#[derive(Serialize)]
+pub struct ConnectionList {
+    pub connections: Vec<ConnectionDetails>,
+}
+
+impl ConnectionList {
+    fn new(connections: Vec<ConnectionDetails>) -> Self {
+        ConnectionList { connections }
+    }
+}
+
+#[derive(Serialize)]
+pub struct ConnectionDetails {
+    pub id: String,
+    pub uuid: String,
+}
+
+impl ConnectionDetails {
+    fn new(id: String, uuid: String) -> Self {
+        ConnectionDetails { id, uuid }
     }
 }
 
@@ -54,7 +95,7 @@ fn dispatch_command_requests(command_request: NetworkRequest) -> glib::Continue 
 }
 
 fn spawn(
-    command_future: impl Future<Output = Result<String>> + 'static,
+    command_future: impl Future<Output = Result<NetworkResponse>> + 'static,
     responder: TokioResponder,
 ) {
     let context = MainContext::ref_thread_default();
@@ -62,15 +103,22 @@ fn spawn(
 }
 
 async fn execute_and_respond(
-    command_future: impl Future<Output = Result<String>> + 'static,
+    command_future: impl Future<Output = Result<NetworkResponse>> + 'static,
     responder: TokioResponder,
 ) {
     let result = command_future.await;
 
+    /*
+        let response = match result {
+            Ok(response) => response,
+            Err(err) => NetworkResponse::Error(err)
+        };
+    */
+
     let _ = responder.send(result);
 }
 
-async fn check_connectivity() -> Result<String> {
+async fn check_connectivity() -> Result<NetworkResponse> {
     let client = create_client().await?;
 
     let connectivity = client
@@ -78,10 +126,12 @@ async fn check_connectivity() -> Result<String> {
         .await
         .context("Failed to execute check connectivity")?;
 
-    Ok(format!("Connectivity: {:?}\n", connectivity))
+    Ok(NetworkResponse::CheckConnectivity(Connectivity::new(
+        connectivity.to_string(),
+    )))
 }
 
-async fn list_connections() -> Result<String> {
+async fn list_connections() -> Result<NetworkResponse> {
     let client = create_client().await?;
 
     let all_connections: Vec<_> = client
@@ -90,19 +140,21 @@ async fn list_connections() -> Result<String> {
         .map(|c| c.upcast::<Connection>())
         .collect();
 
-    let mut result = String::new();
+    let mut connections = Vec::new();
 
     for connection in all_connections {
         if let Some(setting_connection) = connection.setting_connection() {
             if let Some(id) = setting_connection.id() {
                 if let Some(uuid) = setting_connection.uuid() {
-                    result += &format!("{:31} [{}]\n", id.as_str(), uuid);
+                    connections.push(ConnectionDetails::new(id.to_string(), uuid.to_string()));
                 }
             }
         }
     }
 
-    Ok(result)
+    Ok(NetworkResponse::ListConnections(ConnectionList::new(
+        connections,
+    )))
 }
 
 async fn create_client() -> Result<Client> {

@@ -14,31 +14,16 @@ use axum::{
 
 use tokio::sync::oneshot;
 
-use serde::Serialize;
+use crate::network::{NetworkCommand, NetworkRequest, NetworkResponse};
 
-use crate::network::{NetworkCommand, NetworkRequest};
+pub enum AppResponse {
+    Network(NetworkResponse),
+    Error(anyhow::Error),
+}
 
 struct State {
     glib_sender: glib::Sender<NetworkRequest>,
 }
-
-#[derive(Serialize)]
-struct ResponseError {
-    errors: Vec<String>,
-}
-
-impl IntoResponse for ResponseError {
-    type Body = Full<Bytes>;
-    type BodyError = Infallible;
-
-    fn into_response(self) -> Response<Self::Body> {
-        let body = Json(self);
-
-        (StatusCode::INTERNAL_SERVER_ERROR, body).into_response()
-    }
-}
-
-type ResponseResult = std::result::Result<String, ResponseError>;
 
 pub async fn run_web_loop(glib_sender: glib::Sender<NetworkRequest>) {
     let shared_state = Arc::new(State { glib_sender });
@@ -59,21 +44,21 @@ async fn usage() -> &'static str {
     "Use /check-connectivity or /list-connections\n"
 }
 
-async fn check_connectivity(state: extract::Extension<Arc<State>>) -> ResponseResult {
+async fn check_connectivity(state: extract::Extension<Arc<State>>) -> impl IntoResponse {
     send_command(&state.0, NetworkCommand::CheckConnectivity)
         .await
-        .context("Failed to check connectivity")
-        .into_response_result()
+        //        .context("Failed to check connectivity")
+        .into_response()
 }
 
-async fn list_connections(state: extract::Extension<Arc<State>>) -> ResponseResult {
+async fn list_connections(state: extract::Extension<Arc<State>>) -> impl IntoResponse {
     send_command(&state.0, NetworkCommand::ListConnections)
         .await
-        .context("Failed to list connections")
-        .into_response_result()
+        //        .context("Failed to list connections")
+        .into_response()
 }
 
-async fn send_command(state: &Arc<State>, command: NetworkCommand) -> Result<String> {
+async fn send_command(state: &Arc<State>, command: NetworkCommand) -> AppResponse {
     let (responder, receiver) = oneshot::channel();
 
     state
@@ -84,23 +69,39 @@ async fn send_command(state: &Arc<State>, command: NetworkCommand) -> Result<Str
     receive_network_response(receiver).await
 }
 
-async fn receive_network_response(receiver: oneshot::Receiver<Result<String>>) -> Result<String> {
-    receiver
+async fn receive_network_response(
+    receiver: oneshot::Receiver<Result<NetworkResponse>>,
+) -> AppResponse {
+    match receiver
         .await
-        .context("Failed to receive response from network thread")?
+        .context("Failed to receive response from network thread")
+    {
+        Ok(result) => match result {
+            Ok(network_response) => AppResponse::Network(network_response),
+            Err(err) => AppResponse::Error(err),
+        },
+        Err(err) => AppResponse::Error(err),
+    }
 }
 
-trait IntoResposeResult {
-    fn into_response_result(self) -> ResponseResult;
-}
+impl IntoResponse for AppResponse {
+    type Body = Full<Bytes>;
+    type BodyError = Infallible;
 
-impl IntoResposeResult for Result<String> {
-    fn into_response_result(self) -> ResponseResult {
+    fn into_response(self) -> Response<Self::Body> {
         match self {
-            Ok(data) => Ok(data),
-            Err(err) => Err(ResponseError {
-                errors: err.chain().map(|e| format!("{}", e)).collect(),
-            }),
+            AppResponse::Error(err) => {
+                let errors: Vec<String> = err.chain().map(|e| format!("{}", e)).collect();
+                (StatusCode::INTERNAL_SERVER_ERROR, Json(errors)).into_response()
+            }
+            AppResponse::Network(network_response) => match network_response {
+                NetworkResponse::ListConnections(connections) => {
+                    (StatusCode::OK, Json(connections)).into_response()
+                }
+                NetworkResponse::CheckConnectivity(connectivity) => {
+                    (StatusCode::OK, Json(connectivity)).into_response()
+                }
+            },
         }
     }
 }
