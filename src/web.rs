@@ -1,7 +1,7 @@
 use std::convert::Infallible;
 use std::sync::Arc;
 
-use anyhow::{Context, Result};
+use anyhow::Context;
 
 use axum::{
     body::{Bytes, Full},
@@ -47,39 +47,38 @@ async fn usage() -> &'static str {
 async fn check_connectivity(state: extract::Extension<Arc<State>>) -> impl IntoResponse {
     send_command(&state.0, NetworkCommand::CheckConnectivity)
         .await
-        //        .context("Failed to check connectivity")
         .into_response()
 }
 
 async fn list_connections(state: extract::Extension<Arc<State>>) -> impl IntoResponse {
     send_command(&state.0, NetworkCommand::ListConnections)
         .await
-        //        .context("Failed to list connections")
         .into_response()
 }
 
 async fn send_command(state: &Arc<State>, command: NetworkCommand) -> AppResponse {
     let (responder, receiver) = oneshot::channel();
 
+    let action = match command {
+        NetworkCommand::CheckConnectivity => "check connectivity",
+        NetworkCommand::ListConnections => "list actions",
+    };
+
     state
         .glib_sender
         .send(NetworkRequest::new(responder, command))
         .unwrap();
 
-    receive_network_response(receiver).await
-}
-
-async fn receive_network_response(
-    receiver: oneshot::Receiver<Result<NetworkResponse>>,
-) -> AppResponse {
-    match receiver
+    let received = receiver
         .await
-        .context("Failed to receive response from network thread")
-    {
-        Ok(result) => match result {
-            Ok(network_response) => AppResponse::Network(network_response),
-            Err(err) => AppResponse::Error(err),
-        },
+        .context("Failed to receive network thread response");
+
+    let result = received
+        .and_then(|r| r)
+        .or_else(|e| Err(e).context(format!("Failed to {}", action)));
+
+    match result {
+        Ok(network_response) => AppResponse::Network(network_response),
         Err(err) => AppResponse::Error(err),
     }
 }
