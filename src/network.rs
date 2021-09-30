@@ -107,14 +107,6 @@ async fn execute_and_respond(
     responder: TokioResponder,
 ) {
     let result = command_future.await;
-
-    /*
-        let response = match result {
-            Ok(response) => response,
-            Err(err) => NetworkResponse::Error(err)
-        };
-    */
-
     let _ = responder.send(result);
 }
 
