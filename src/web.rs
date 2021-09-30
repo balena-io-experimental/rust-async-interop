@@ -14,11 +14,24 @@ use axum::{
 
 use tokio::sync::oneshot;
 
+use serde::Serialize;
+
 use crate::network::{NetworkCommand, NetworkRequest, NetworkResponse};
 
 pub enum AppResponse {
     Network(NetworkResponse),
     Error(anyhow::Error),
+}
+
+#[derive(Serialize)]
+pub struct AppErrors {
+    pub errors: Vec<String>,
+}
+
+impl AppErrors {
+    fn new(errors: Vec<String>) -> Self {
+        AppErrors { errors }
+    }
 }
 
 struct State {
@@ -91,7 +104,8 @@ impl IntoResponse for AppResponse {
         match self {
             AppResponse::Error(err) => {
                 let errors: Vec<String> = err.chain().map(|e| format!("{}", e)).collect();
-                (StatusCode::INTERNAL_SERVER_ERROR, Json(errors)).into_response()
+                let app_errors = AppErrors::new(errors);
+                (StatusCode::INTERNAL_SERVER_ERROR, Json(app_errors)).into_response()
             }
             AppResponse::Network(network_response) => match network_response {
                 NetworkResponse::ListConnections(connections) => {
