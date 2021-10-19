@@ -45,6 +45,7 @@ pub async fn run_web_loop(glib_sender: glib::Sender<NetworkRequest>) {
         .route("/", get(usage))
         .route("/check-connectivity", get(check_connectivity))
         .route("/list-connections", get(list_connections))
+        .route("/list-wifi-networks", get(list_wifi_networks))
         .layer(AddExtensionLayer::new(shared_state));
 
     axum::Server::bind(&"0.0.0.0:3000".parse().unwrap())
@@ -69,12 +70,19 @@ async fn list_connections(state: extract::Extension<Arc<State>>) -> impl IntoRes
         .into_response()
 }
 
+async fn list_wifi_networks(state: extract::Extension<Arc<State>>) -> impl IntoResponse {
+    send_command(&state.0, NetworkCommand::ListWiFiNetworks)
+        .await
+        .into_response()
+}
+
 async fn send_command(state: &Arc<State>, command: NetworkCommand) -> AppResponse {
     let (responder, receiver) = oneshot::channel();
 
     let action = match command {
         NetworkCommand::CheckConnectivity => "check connectivity",
         NetworkCommand::ListConnections => "list actions",
+        NetworkCommand::ListWiFiNetworks => "list WiFi networks",
     };
 
     state
@@ -113,6 +121,9 @@ impl IntoResponse for AppResponse {
                 }
                 NetworkResponse::CheckConnectivity(connectivity) => {
                     (StatusCode::OK, Json(connectivity)).into_response()
+                }
+                NetworkResponse::ListWiFiNetworks(networks) => {
+                    (StatusCode::OK, Json(networks)).into_response()
                 }
             },
         }
