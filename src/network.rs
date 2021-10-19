@@ -36,7 +36,7 @@ impl NetworkRequest {
 pub enum NetworkResponse {
     CheckConnectivity(Connectivity),
     ListConnections(ConnectionList),
-    ListWiFiNetworks(Vec<String>),
+    ListWiFiNetworks(NetworkList),
 }
 
 #[derive(Serialize)]
@@ -70,6 +70,28 @@ pub struct ConnectionDetails {
 impl ConnectionDetails {
     fn new(id: String, uuid: String) -> Self {
         ConnectionDetails { id, uuid }
+    }
+}
+
+#[derive(Serialize)]
+pub struct NetworkList {
+    pub networks: Vec<NetworkDetails>,
+}
+
+impl NetworkList {
+    fn new(networks: Vec<NetworkDetails>) -> Self {
+        NetworkList { networks }
+    }
+}
+
+#[derive(Serialize)]
+pub struct NetworkDetails {
+    pub ssid: String,
+}
+
+impl NetworkDetails {
+    fn new(ssid: String) -> Self {
+        NetworkDetails { ssid }
     }
 }
 
@@ -164,12 +186,14 @@ async fn list_wifi_networks() -> Result<NetworkResponse> {
 
     let access_points = get_nearby_access_points(&device);
 
-    let ssids = access_points
+    let networks = access_points
         .iter()
-        .map(|ap| ssid_to_string(ap.ssid()).unwrap())
+        .map(|ap| NetworkDetails::new(ssid_to_string(ap.ssid()).unwrap()))
         .collect::<Vec<_>>();
 
-    Ok(NetworkResponse::ListWiFiNetworks(ssids))
+    Ok(NetworkResponse::ListWiFiNetworks(NetworkList::new(
+        networks,
+    )))
 }
 
 async fn scan_wifi(device: &DeviceWifi) -> Result<()> {
