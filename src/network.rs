@@ -87,11 +87,12 @@ impl NetworkList {
 #[derive(Serialize)]
 pub struct NetworkDetails {
     pub ssid: String,
+    pub strength: u8,
 }
 
 impl NetworkDetails {
-    fn new(ssid: String) -> Self {
-        NetworkDetails { ssid }
+    fn new(ssid: String, strength: u8) -> Self {
+        NetworkDetails { ssid, strength }
     }
 }
 
@@ -188,7 +189,7 @@ async fn list_wifi_networks() -> Result<NetworkResponse> {
 
     let networks = access_points
         .iter()
-        .map(|ap| NetworkDetails::new(ssid_to_string(ap.ssid()).unwrap()))
+        .map(|ap| NetworkDetails::new(ssid_to_string(ap.ssid()).unwrap(), ap.strength()))
         .collect::<Vec<_>>();
 
     Ok(NetworkResponse::ListWiFiNetworks(NetworkList::new(
