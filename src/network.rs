@@ -229,7 +229,8 @@ fn get_nearby_access_points(device: &DeviceWifi) -> Vec<AccessPoint> {
     // Purge access points without SSID (hidden)
     access_points.retain(|ap| !ssid_to_string(ap.ssid()).unwrap().is_empty());
 
-    access_points.sort_by_key(|ap| ap.strength());
+    // Sort access points by signal strength first and then ssid
+    access_points.sort_by_key(|ap| (ap.strength(), ssid_to_string(ap.ssid()).unwrap()));
     access_points.reverse();
 
     access_points
