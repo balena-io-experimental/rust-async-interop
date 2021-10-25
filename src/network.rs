@@ -104,13 +104,11 @@ pub fn run_network_manager_loop(glib_receiver: glib::Receiver<NetworkRequest>) {
     let context = MainContext::new();
     let loop_ = MainLoop::new(Some(&context), false);
 
-    context.push_thread_default();
+    context.with_thread_default(|| {
+        glib_receiver.attach(None, dispatch_command_requests);
 
-    glib_receiver.attach(None, dispatch_command_requests);
-
-    loop_.run();
-
-    context.pop_thread_default();
+        loop_.run();
+    }).unwrap();
 }
 
 fn dispatch_command_requests(command_request: NetworkRequest) -> glib::Continue {
